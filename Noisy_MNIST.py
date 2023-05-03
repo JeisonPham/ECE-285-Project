@@ -1,6 +1,7 @@
 import torch
 import torchvision
 
+__all__ = ["NoisyMNIST"]
 
 class NoisyMNIST(torchvision.datasets.MNIST):
     """
@@ -15,10 +16,10 @@ class NoisyMNIST(torchvision.datasets.MNIST):
         self.mean = mean
         self.std = std
 
-    def __get_item__(self, ndx):
+    def __getitem__(self, ndx):
         baseImage, label = super().__getitem__(ndx)
         noisyImage = baseImage + torch.randn(baseImage.size()) * self.std + self.mean
-        return baseImage, noisyImage, label
+        return noisyImage, baseImage, label
         
 """ Quick Sanity check test """
 
