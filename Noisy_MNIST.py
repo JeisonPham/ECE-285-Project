@@ -19,7 +19,7 @@ class NoisyMNIST(torchvision.datasets.MNIST):
     def __getitem__(self, ndx):
         baseImage, label = super().__getitem__(ndx)
         noisyImage = baseImage + torch.randn(baseImage.size()) * self.std + self.mean
-        return noisyImage, baseImage, label
+        return noisyImage, baseImage.flatten()
         
 """ Quick Sanity check test """
 
