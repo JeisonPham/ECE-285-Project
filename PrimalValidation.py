@@ -41,8 +41,8 @@ transform = torchvision.transforms.Compose([
     torchvision.transforms.Normalize(
         # we can consider resizing if need be
         (0.1307,), (0.3081,))])
-train_dataset = NoisyMNIST("data", train=True, download=True, transform=transform, target_transform=None)
-test_dataset = NoisyMNIST("data", train=False, download=True, transform=transform, target_transform=None)
+train_dataset = NoisyMNIST("data", train=True, download=True, transform=transform, target_transform=None, std=2)
+test_dataset = NoisyMNIST("data", train=False, download=True, transform=transform, target_transform=None, std=2)
 
 
 class FCNetwork(nn.Module):
