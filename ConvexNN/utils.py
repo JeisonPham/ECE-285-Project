@@ -2,7 +2,21 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 
-def loss_func_cvxproblem(yhat, y, model, _x, sign_patterns, beta, rho, device):
+
+def sample_gate_vectors(
+        seed: int,
+        d: int,
+        n_samples: int
+) -> np.ndarray:
+
+    rng = np.random.default_rng(seed)
+
+    G = rng.standard_normal((d, n_samples))
+    # G = sample_dense_gates(rng, d, n_samples)
+    return G
+
+
+def loss_func_cvxproblem(yhat, y, model, _x, beta):
     _x = _x.view(_x.shape[0], -1)
 
     # term 1
@@ -11,35 +25,36 @@ def loss_func_cvxproblem(yhat, y, model, _x, sign_patterns, beta, rho, device):
     loss = loss + beta * torch.sum(torch.norm(model.v, dim=1))
     loss = loss + beta * torch.sum(torch.norm(model.w, dim=1))
 
-    # term 3
-    sign_patterns = sign_patterns.unsqueeze(2)  # N x P x 1
-
-    Xv = torch.matmul(_x, torch.sum(model.v, dim=2, keepdim=True))  # N x d times P x d x 1 -> P x N x 1
-    DXv = torch.mul(sign_patterns, Xv.permute(1, 0, 2))  # P x N x 1
-    relu_term_v = torch.max(-2 * DXv + Xv.permute(1, 0, 2), torch.Tensor([0]).to(device))
-    loss = loss + rho * torch.sum(relu_term_v)
-
-    Xw = torch.matmul(_x, torch.sum(model.w, dim=2, keepdim=True))
-    DXw = torch.mul(sign_patterns, Xw.permute(1, 0, 2))
-    relu_term_w = torch.max(-2 * DXw + Xw.permute(1, 0, 2), torch.Tensor([0]).to(device))
-    loss = loss + rho * torch.sum(relu_term_w)
 
     return loss
+
 
 def generate_sign_patterns(A, P, verbose=False):
     # generate sign patterns
     n, d = A.shape
     sign_pattern_list = []  # sign patterns
-    u_vector_list = []             # random vectors used to generate the sign paterns
-    umat = np.random.normal(0, 1, (d,P))
+    u_vector_list = []  # random vectors used to generate the sign paterns
+    umat = np.random.normal(0, 1, (d, P))
     sampled_sign_pattern_mat = (np.matmul(A, umat) >= 0)
     for i in range(P):
-        sampled_sign_pattern = sampled_sign_pattern_mat[:,i]
+        sampled_sign_pattern = sampled_sign_pattern_mat[:, i]
         sign_pattern_list.append(sampled_sign_pattern)
-        u_vector_list.append(umat[:,i])
+        u_vector_list.append(umat[:, i])
     if verbose:
         print("Number of sign patterns generated: " + str(len(sign_pattern_list)))
-    return len(sign_pattern_list),sign_pattern_list, u_vector_list
+    return len(sign_pattern_list), sign_pattern_list, u_vector_list
+
+
+class UpdatedTestDataset(Dataset):
+    def __init__(self, X, y):
+        self.x = X
+        self.y = y
+
+    def __len__(self):
+        return len(self.x)
+
+    def __getitem__(self, item):
+        return self.x[item], self.y[item]
 
 
 class PrepareData3D(Dataset):

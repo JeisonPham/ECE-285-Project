@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 from .utils import *
-from .ConvexReLU import ConvexReLU
+from .models import ConvexReLU
 
 def visualize_dataset(x, y, z):
     fig = plt.figure()

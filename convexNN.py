@@ -348,6 +348,7 @@ def validation_cvxproblem(model, testloader, u_vectors, beta, rho, device):
 
     with torch.no_grad():
         for ix, (_x, _y) in enumerate(testloader):
+            _x = torch.randn((5000, 9)).float()
             _x = Variable(_x).to(device)
             _y = Variable(_y).to(device)
             _x = _x.view(_x.shape[0], -1)
@@ -415,6 +416,7 @@ def sgd_solver_cvxproblem(ds, ds_test, num_epochs, num_neurons, beta,
         model.train()
         for ix, (_x, _y, _z) in enumerate(ds):
             # =========make input differentiable=======================
+            _x = torch.rand((3000, 9)).float()
             _x = Variable(_x).to(device)
             _y = Variable(_y).to(device)
             _z = Variable(_z).to(device)
@@ -505,7 +507,7 @@ test_dataset = NoisyMNIST("data", train=False, download=True, transform=transfor
 # data extraction
 print('Extracting the data')
 dummy_loader = torch.utils.data.DataLoader(
-    train_dataset, batch_size=50000, shuffle=False,
+    train_dataset, batch_size=25, shuffle=False,
     pin_memory=True, sampler=None)
 for A, y in dummy_loader:
     pass
@@ -515,11 +517,11 @@ A = A.view(A.shape[0], -1)
 n, d = A.size()
 
 # problem parameters
-P, verbose = 512, True  # SET verbose to True to see progress
+P, verbose = 4000, True  # SET verbose to True to see progress
 GD_only = ARGS.GD[0]
 CVX_only = ARGS.CVX[0]
 beta = 1e-3  # regularization parameter
-num_epochs1, batch_size = ARGS.n_epochs[0], 1000  #
+num_epochs1, batch_size = ARGS.n_epochs[0], 25  #
 num_neurons = P  # number of neurons is equal to number of hyperplane arrangements
 
 # create dataloaders
@@ -528,7 +530,7 @@ train_loader = torch.utils.data.DataLoader(
     pin_memory=True, sampler=None)
 
 test_loader = torch.utils.data.DataLoader(
-    test_dataset, batch_size=1000, shuffle=False,
+    test_dataset, batch_size=batch_size, shuffle=False,
     pin_memory=True)
 
 # SGD solver for the nonconvex problem
@@ -567,7 +569,7 @@ if GD_only == 0:
     solver_type = ARGS.solver_cvx[0]  # pick: "sgd", "adam", "adagrad", "adadelta", "LBFGS"
     LBFGS_param = [10, 4]
     batch_size = 1000
-    num_epochs2, batch_size = ARGS.n_epochs[1], 64
+    num_epochs2, batch_size = ARGS.n_epochs[1], 25
 
     #  Convex
     print('Generating sign patterns')
@@ -579,24 +581,24 @@ if GD_only == 0:
     ds_train = DataLoader(ds_train, batch_size=batch_size, shuffle=True)
 
     test_loader = torch.utils.data.DataLoader(
-        test_dataset, batch_size=64, shuffle=False,
+        test_dataset, batch_size=25, shuffle=False,
         pin_memory=True)
 
-    #  Convex1
-    learning_rate = 1e-6  # 1e-6 for sgd
-    print('Convex Random1-mu={}'.format(learning_rate))
-    results_cvx1 = sgd_solver_cvxproblem(ds_train, test_loader, num_epochs2, num_neurons, beta,
-                                         learning_rate, batch_size, rho, u_vectors, solver_type, LBFGS_param,
-                                         verbose=True,
-                                         n=n, device='cuda')
-
-    #  Convex2
-    learning_rate = 5e-7  # 1e-6 for sgd
-    print('Convex Random2-mu={}'.format(learning_rate))
-    results_cvx2 = sgd_solver_cvxproblem(ds_train, test_loader, num_epochs2, num_neurons, beta,
-                                         learning_rate, batch_size, rho, u_vectors, solver_type, LBFGS_param,
-                                         verbose=True,
-                                         n=n, device='cuda')
+    # #  Convex1
+    # learning_rate = 1e-6  # 1e-6 for sgd
+    # print('Convex Random1-mu={}'.format(learning_rate))
+    # results_cvx1 = sgd_solver_cvxproblem(ds_train, test_loader, num_epochs2, num_neurons, beta,
+    #                                      learning_rate, batch_size, rho, u_vectors, solver_type, LBFGS_param,
+    #                                      verbose=True,
+    #                                      n=n, device='cuda')
+    #
+    # #  Convex2
+    # learning_rate = 5e-7  # 1e-6 for sgd
+    # print('Convex Random2-mu={}'.format(learning_rate))
+    # results_cvx2 = sgd_solver_cvxproblem(ds_train, test_loader, num_epochs2, num_neurons, beta,
+    #                                      learning_rate, batch_size, rho, u_vectors, solver_type, LBFGS_param,
+    #                                      verbose=True,
+    #                                      n=n, device='cuda')
 
     #  Convex with convolutional patterns
     print('Generating conv sign patterns')
@@ -612,7 +614,7 @@ if GD_only == 0:
     print('Convex Conv1-mu={}'.format(learning_rate))
     results_cvx_conv1 = sgd_solver_cvxproblem(ds_train, test_loader, num_epochs2, num_neurons, beta,
                                               learning_rate, batch_size, rho, u_vectors, solver_type, LBFGS_param,
-                                              verbose=True,
+                                              verbose=True,d=9,
                                               n=n, device='cuda')
 
     #  Convex Conv2
