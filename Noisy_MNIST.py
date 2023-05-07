@@ -10,7 +10,11 @@ class NoisyMNIST(torchvision.datasets.MNIST):
     Derived class to build a noisy version of MNIST    
     
     """
-    def __init__(self, root, train, download, transform, target_transform, mean=0.0, std=1):
+    def __init__(self, root, train, download, transform, target_transform, 
+                 window_shape = None, stride = 1, mean=0.0, std=1):
+        assert isinstance(window_shape,tuple)
+        assert isinstance(stride,int)
+        assert stride >= 1
         # initializing the parent class
         super().__init__(root=root, train=train, download=download, 
                          transform=transform, target_transform=target_transform)
@@ -18,10 +22,21 @@ class NoisyMNIST(torchvision.datasets.MNIST):
         self.mean = mean
         self.std = std
 
+    def convolution_patches(self,tensor):
+        # case where no convolutional patches are used
+        if self.window_shape == None:
+            return tensor
+        tensor = tensor.numpy()
+        tensor = np.lib.stride_tricks.sliding_window_view(tensor,window_shape=(1,self.window_shape[1]+self.stride,self.window_shape[2]+self.stride))
+        tensor = torch.from_numpy(tensor)
+        tensor = torch.reshape(tensor,(1,tensor.shape[1]*tensor.shape[2],tensor.shape[4]*tensor.shape[5]))
+        tensor = tensor[:,:,::self.stride]
+        return tensor
 
     def __getitem__(self, ndx):
         baseImage, label = super().__getitem__(ndx)
         noisyImage = baseImage + torch.randn(baseImage.size()) * self.std + self.mean
+        noisyImage = convolution_patches(noisyImage)
         return noisyImage, baseImage.flatten()
         
 """ Quick Sanity check test """
@@ -54,28 +69,32 @@ plt.show()
 #    def __repr__(self):
 #        return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
 
-# make sure that this Convolutional Patches is used after the toTensor transformation in the Transforms composition
+# make sure that this Convolutional Patches is used after the ToTensor transformation in the Transforms composition
+'''
 class ConvolutionalPatches(object):
-    def __init__(self,window_shape):
+    def __init__(self, window_shape, stride = 1):
         assert isinstance(window_shape,tuple)
+        assert isinstance(stride,int)
+        assert stride >= 1
         # assumes that the object is already a tensor object, converts to numpy
         self.window_shape = window_shape
+        self.stride = stride
     def __call__(self,tensor):
         tensor = tensor.numpy()
-        tensor = np.lib.stride_tricks.sliding_window_view(tensor,window_shape=self.window_shape)
+        tensor = np.lib.stride_tricks.sliding_window_view(tensor,window_shape=(1,self.window_shape[1]+self.stride,self.window_shape[2]+self.stride))
         tensor = torch.from_numpy(tensor)
         tensor = torch.reshape(tensor,(1,tensor.shape[1]*tensor.shape[2],tensor.shape[4]*tensor.shape[5]))
-        
+        tensor = tensor[:,:,::self.stride]
         return tensor
         
 
 '''
-Convolutional Patches Sanity Check
+#Convolutional Patches Sanity Check
 
 '''
-'''
 
-Example of how to add ConvolutionalPatches class to the dataloader transforms in order to get the convolutional patches as rows in a matrix
+
+#Example of how to add ConvolutionalPatches class to the dataloader transforms in order to get the convolutional patches as rows in a matrix
 import matplotlib.pyplot as plt
 # loading in the baseline data
 transform = torchvision.transforms.Compose([
@@ -83,7 +102,7 @@ transform = torchvision.transforms.Compose([
                                torchvision.transforms.Normalize(
                                  (0.1307,), (0.3081,))])
 Noisy_MNIST_FULL = NoisyMNIST("data", train=True, download=True, transform=transform, target_transform=None)
-baseIm, noisyIm, label = Noisy_MNIST_FULL.__get_item__(5)
+baseIm, noisyIm = Noisy_MNIST_FULL.__getitem__(5)
 print(baseIm.shape)
 
 # loading in the Patched data
@@ -95,7 +114,7 @@ transform_Patches = torchvision.transforms.Compose([
                                  ])
                                 
 Noisy_MNIST_Patches = NoisyMNIST("data", train=True, download=True, transform=transform_Patches, target_transform=None)
-baseIm_Patches, noisyIm_Patches, label = Noisy_MNIST_Patches.__get_item__(5)
+baseIm_Patches, noisyIm_Patches, label = Noisy_MNIST_Patches.__getitem__(5)
 print(baseIm_Patches.shape)
 
 #print(noisyIm)
