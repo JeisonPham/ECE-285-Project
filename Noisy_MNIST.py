@@ -21,24 +21,38 @@ class NoisyMNIST(torchvision.datasets.MNIST):
         # initializing the mean and standard deviation
         self.mean = mean
         self.std = std
+        self.stride = stride
+        self.window_shape = window_shape
 
-    def convolution_patches(self,tensor):
+    def __convolution_patches__(self,tensor):
         # case where no convolutional patches are used
         if self.window_shape == None:
             return tensor
+        kernel_x = self.window_shape[1]
+        kernel_y = self.window_shape[2]
+        if self.stride != 1:
+            kernel_x += self.stride
+            kernel_y += self.stride
         tensor = tensor.numpy()
-        tensor = np.lib.stride_tricks.sliding_window_view(tensor,window_shape=(1,self.window_shape[1]+self.stride,self.window_shape[2]+self.stride))
-        tensor = torch.from_numpy(tensor)
+        tensor = np.lib.stride_tricks.sliding_window_view(tensor,window_shape=(1,kernel_x,kernel_y))
+        tensor = torch.tensor(tensor)
         tensor = torch.reshape(tensor,(1,tensor.shape[1]*tensor.shape[2],tensor.shape[4]*tensor.shape[5]))
+        
         tensor = tensor[:,:,::self.stride]
         return tensor
 
     def __getitem__(self, ndx):
         baseImage, label = super().__getitem__(ndx)
         noisyImage = baseImage + torch.randn(baseImage.size()) * self.std + self.mean
-        noisyImage = convolution_patches(noisyImage)
+        noisyImage = self.__convolution_patches__(noisyImage)
         return noisyImage, baseImage.flatten()
-        
+
+transform = torchvision.transforms.Compose([
+                               torchvision.transforms.ToTensor(),
+                               torchvision.transforms.Normalize(
+                                 (0.1307,), (0.3081,))])
+train_dataset = NoisyMNIST("data", train=True, download=True, transform=transform, target_transform=None, std=0.25, window_shape=(1, 3, 3))
+print(train_dataset[0][0].shape)
 """ Quick Sanity check test """
 
 '''
