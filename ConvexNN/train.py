@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import time
 from ConvexNN.utils import *
 from ConvexNN.models import ConvexReLU
+from torch import autograd
 
 
 def visualize_dataset(x, y, z):
@@ -30,22 +31,24 @@ def validation_cvxproblem(model, testloader, beta, device, print=False):
 
             yhat = model(_x).float()
 
-            loss = loss_func_cvxproblem(yhat, _y, model, _x, beta, device)
+            loss = loss_func_cvxproblem(yhat, _y, model, _x, beta)
 
             test_loss += loss.item()
 
     if print:
-        x = _x[0].detach().cpu().numpy().reshape(28, 28)
+        # x = _x[0].detach().cpu().numpy().reshape(28, 28)
+        x = np.zeros((28, 28))
         y = _y[0].detach().cpu().numpy().reshape(28, 28)
         z = yhat[0].detach().cpu().numpy().reshape(28, 28)
         visualize_dataset(x, y, z)
 
-    return test_loss
+    return test_loss / (ix + 1)
 
 
 def train_one_epoch(model, optimizer, dataloader, beta, device):
     model.train()
     losses = 0
+
     for index, (x, y) in enumerate(dataloader):
         x = Variable(x).to(device)
         y = Variable(y).to(device)
@@ -56,24 +59,34 @@ def train_one_epoch(model, optimizer, dataloader, beta, device):
         loss = loss_func_cvxproblem(yhat, y, model, x, beta)
         loss.backward()
 
+        torch.nn.utils.clip_grad_norm(model.parameters(), 5)
         optimizer.step()
 
         losses += loss.item()
-    return losses
+    return losses / (index + 1)
 
 def train(model, train_dataloader, test_dataloader, epochs, learning_rate, beta, device='cpu'):
     device = torch.device(device)
 
     optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, verbose=True, factor=0.5, eps=1e-12)
     for epoch in range(epochs):
         model.train()
-        loss = train_one_epoch(model, optimizer, train_dataloader, beta, device)
+        train_loss = train_one_epoch(model, optimizer, train_dataloader, beta, device)
+        scheduler.step(train_loss)
+        if epoch % 10 == 0:
+            test_loss = validation_cvxproblem(model, test_dataloader, beta, device, print=False)
+        else:
+            test_loss = np.nan
+        print(f"[{epoch + 1}/{epochs}] train loss: {train_loss:02} test loss: {test_loss:02}")
 
+    loss = validation_cvxproblem(model, test_dataloader, beta, device, print=True)
+    print(loss)
 if __name__ == "__main__":
-    D = np.ones((18, 8)) * 2
-    X = np.random.rand(1000, 8, 2)
-    u = np.random.rand(18, 2, 7)
+    D = np.ones((18, 8)) * 2 # (num_neurons, input_dim)
+    X = np.random.rand(1000, 8, 2) #(num_samples, input_dim, num_features)
+    u = np.random.rand(18, 2, 7) #(num_neurons, num_features, output_dim)
 
     print(np.einsum("mn, ink->imnk", D, X).shape)
     N = []

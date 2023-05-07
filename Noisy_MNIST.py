@@ -10,34 +10,27 @@ class NoisyMNIST(torchvision.datasets.MNIST):
     Derived class to build a noisy version of MNIST    
     
     """
-    def __init__(self, root, train, download, transform, target_transform, 
-                 window_shape = None, stride = 1, mean=0.0, std=1):
-        assert isinstance(window_shape,tuple)
-        assert isinstance(stride,int)
-        assert stride >= 1
+    def __init__(self, *args, mean=0.0, std=1, unfold_settings=None, **kwargs):
         # initializing the parent class
-        super().__init__(root=root, train=train, download=download, 
-                         transform=transform, target_transform=target_transform)
+        super().__init__(*args, **kwargs)
         # initializing the mean and standard deviation
         self.mean = mean
         self.std = std
 
-    def convolution_patches(self,tensor):
-        # case where no convolutional patches are used
-        if self.window_shape == None:
-            return tensor
-        tensor = tensor.numpy()
-        tensor = np.lib.stride_tricks.sliding_window_view(tensor,window_shape=(1,self.window_shape[1]+self.stride,self.window_shape[2]+self.stride))
-        tensor = torch.from_numpy(tensor)
-        tensor = torch.reshape(tensor,(1,tensor.shape[1]*tensor.shape[2],tensor.shape[4]*tensor.shape[5]))
-        tensor = tensor[:,:,::self.stride]
-        return tensor
+        if unfold_settings is not None:
+            self.unfold = torch.nn.Unfold(**unfold_settings)
+        else:
+            self.unfold = None
+
+
+
 
     def __getitem__(self, ndx):
         baseImage, label = super().__getitem__(ndx)
         noisyImage = baseImage + torch.randn(baseImage.size()) * self.std + self.mean
-        noisyImage = convolution_patches(noisyImage)
-        return noisyImage, baseImage.flatten()
+        if self.unfold is not None:
+            noisyImage = self.unfold(noisyImage)
+        return noisyImage.T, baseImage.flatten()
         
 """ Quick Sanity check test """
 

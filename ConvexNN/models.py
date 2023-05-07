@@ -83,79 +83,38 @@ class NonConvexReLU(nn.Module):
 
 
 class ConvexReLU(nn.Module):
-    def __init__(self, G, c, p, d):
+    def __init__(self, G, output_dim, input_dim):
         super().__init__()
         self.G = G
         if not torch.is_tensor(self.G):
             self.G = torch.from_numpy(self.G).float()
-        self.d, self.p = G.shape
-        self.c = c
 
-        self.v = nn.Parameter(data=torch.zeros(d, p, c), requires_grad=True)
-        self.w = nn.Parameter(data=torch.zeros(d, p, c), requires_grad=True)
+        num_neurons, _ = self.G.shape
 
-    def __call__(self, x, D=None):
+        self.v = nn.Parameter(data=torch.zeros(num_neurons, input_dim, output_dim), requires_grad=True)
+        self.w = nn.Parameter(data=torch.zeros(num_neurons, input_dim, output_dim), requires_grad=True)
+        self.G = nn.Parameter(data=self.G, requires_grad=False)
 
-
-        p_dff = self.v - self.w
-        return torch.einsum("ij, lkj, ik->il", x, p_dff, D)
+    def __call__(self, x):
+        temp_x = torch.einsum("mn, ink->imnk", self.G, x)
+        p_diff = self.v - self.w
+        return torch.einsum("ijkl, jlm->im", temp_x, p_diff)
 
 
 if __name__ == "__main__":
     from utils import sample_gate_vectors, loss_func_cvxproblem
+    import torch
+    from torch.nn import Unfold
 
+    import torchvision
+    from Noisy_MNIST import NoisyMNIST
 
-    def relu(x):
-        return np.maximum(0, x)
+    transform = torchvision.transforms.Compose([
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize(
+            # we can consider resizing if need be
+            (0.1307,), (0.3081,))])
+    train_dataset = NoisyMNIST("data", train=True, download=True, transform=transform,
+                               target_transform=None, std=0.25, unfold_settings=dict(kernel_size=3, stride=1))
 
-
-    def drelu(x):
-        return x >= 0
-
-    N = 12
-    d = 3
-    num_neurons = 500
-    c = 1
-    beta = 1e-4
-
-    G = sample_gate_vectors(42, d, num_neurons)
-    print(G.shape)
-
-    X = np.random.rand(N, d)
-    dmat = np.empty((N, 0))
-
-    ## Finite approximation of all possible sign patterns
-    for i in range(int(1e2)):
-        u = np.random.randn(d, 1)
-        dmat = np.append(dmat, drelu(np.dot(X, u)), axis=1)
-
-    dmat = (np.unique(dmat, axis=1))
-    convexModel = ConvexReLU(G, c, dmat.shape[1], d)
-    y = ((np.linalg.norm(X[:,0:d-1],axis=1)>1)-0.5)*2
-    # y = [((np.linalg.norm(X[:,0:d-1],axis=1)>1)-0.5)*2, ((np.linalg.norm(X[:,0:d-1],axis=1)>1)-0.5)*3]
-    # y = np.asarray(y).T
-
-    X = torch.from_numpy(X).float()
-    y = torch.from_numpy(y).float()
-    optimizer = torch.optim.SGD(convexModel.parameters(), lr=1e-4, momentum=0.9)
-
-    convexModel.train()
-    previous_loss = 1000
-    while True:
-        yhat = convexModel(X, dmat)
-        optimizer.zero_grad()
-        loss = loss_func_cvxproblem(yhat, y, convexModel, X, beta)
-        if torch.abs(previous_loss - loss) < 1e-3:
-            break
-        previous_loss = loss
-        loss.backward()
-        optimizer.step()
-
-    print(convexModel(X, dmat))
-    first, second = relu_solution_mapping(convexModel)
-
-    nonConvex = NonConvexReLU(d, num_neurons, c)
-    nonConvex.update_parameters(first, second)
-    print(nonConvex(X))
-
-
+    print(train_dataset[0][0].shape)

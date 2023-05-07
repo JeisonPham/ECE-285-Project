@@ -22,9 +22,11 @@ def loss_func_cvxproblem(yhat, y, model, _x, beta):
     # term 1
     loss = 0.5 * torch.norm(yhat - y) ** 2
     # term 2
-    loss = loss + beta * torch.sum(torch.norm(model.v, dim=1))
-    loss = loss + beta * torch.sum(torch.norm(model.w, dim=1))
-
+    # for layer, p in enumerate(model.parameters()):
+    #     if layer == 0:
+    #         loss += beta / 2 * torch.norm(p) ** 2
+        # else:
+        #     loss += beta / 2 * sum([torch.norm(p[:, j], 1) ** 2 for j in range(p.shape[1])])
 
     return loss
 
