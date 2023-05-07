@@ -51,12 +51,14 @@ class NoisyMNIST(torchvision.datasets.MNIST):
             noisyImage = torch.transpose(noisyImage,0,1)
         return noisyImage, baseImage.flatten()
 
+'''
 transform = torchvision.transforms.Compose([
                                torchvision.transforms.ToTensor(),
                                torchvision.transforms.Normalize(
                                  (0.1307,), (0.3081,))])
 train_dataset = NoisyMNIST("data", train=True, download=True, transform=transform, target_transform=None, std=0.25, kernel_size=3)
 print(train_dataset[0][0].shape)
+'''
 """ Quick Sanity check test """
 
 '''
