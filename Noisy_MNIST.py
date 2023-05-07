@@ -11,8 +11,8 @@ class NoisyMNIST(torchvision.datasets.MNIST):
     
     """
     def __init__(self, root, train, download, transform, target_transform, 
-                 window_shape = None, stride = 1, mean=0.0, std=1):
-        assert isinstance(window_shape,tuple)
+                 kernel_size = None, stride = 1, mean=0.0, std=1):
+        assert isinstance(kernel_size,int) or isinstance(kernel_size,None)
         assert isinstance(stride,int)
         assert stride >= 1
         # initializing the parent class
@@ -22,8 +22,9 @@ class NoisyMNIST(torchvision.datasets.MNIST):
         self.mean = mean
         self.std = std
         self.stride = stride
-        self.window_shape = window_shape
-
+        self.kernel_size = kernel_size
+    '''
+    Deprecated after finding torch's unfold function
     def __convolution_patches__(self,tensor):
         # case where no convolutional patches are used
         if self.window_shape == None:
@@ -40,18 +41,21 @@ class NoisyMNIST(torchvision.datasets.MNIST):
         
         tensor = tensor[:,:,::self.stride]
         return tensor
-
+    '''
     def __getitem__(self, ndx):
         baseImage, label = super().__getitem__(ndx)
         noisyImage = baseImage + torch.randn(baseImage.size()) * self.std + self.mean
-        noisyImage = self.__convolution_patches__(noisyImage)
+        if self.kernel_size is not None:
+            unfold = torch.nn.Unfold(kernel_size=self.kernel_size,stride=self.stride)
+            noisyImage = unfold(noisyImage)
+            noisyImage = torch.transpose(noisyImage,0,1)
         return noisyImage, baseImage.flatten()
 
 transform = torchvision.transforms.Compose([
                                torchvision.transforms.ToTensor(),
                                torchvision.transforms.Normalize(
                                  (0.1307,), (0.3081,))])
-train_dataset = NoisyMNIST("data", train=True, download=True, transform=transform, target_transform=None, std=0.25, window_shape=(1, 3, 3))
+train_dataset = NoisyMNIST("data", train=True, download=True, transform=transform, target_transform=None, std=0.25, kernel_size=3)
 print(train_dataset[0][0].shape)
 """ Quick Sanity check test """
 
