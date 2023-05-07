@@ -2,12 +2,15 @@ import torch
 import torchvision
 import numpy as np
 
+__all__ = ["NoisyMNIST"]
+
+
 class NoisyMNIST(torchvision.datasets.MNIST):
     """
     Derived class to build a noisy version of MNIST    
     
     """
-    def __init__(self, root, train, download, transform, target_transform, mean = 0.0, std=1 ):
+    def __init__(self, root, train, download, transform, target_transform, mean=0.0, std=1):
         # initializing the parent class
         super().__init__(root=root, train=train, download=download, 
                          transform=transform, target_transform=target_transform)
@@ -15,10 +18,11 @@ class NoisyMNIST(torchvision.datasets.MNIST):
         self.mean = mean
         self.std = std
 
-    def __get_item__(self, ndx):
+
+    def __getitem__(self, ndx):
         baseImage, label = super().__getitem__(ndx)
         noisyImage = baseImage + torch.randn(baseImage.size()) * self.std + self.mean
-        return baseImage, noisyImage, label
+        return noisyImage, baseImage.flatten()
         
 """ Quick Sanity check test """
 
