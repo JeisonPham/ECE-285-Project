@@ -3,8 +3,9 @@ from torch.autograd import Variable
 import numpy as np
 import matplotlib.pyplot as plt
 import time
-from .utils import *
-from .models import ConvexReLU
+from ConvexNN.utils import *
+from ConvexNN.models import ConvexReLU
+
 
 def visualize_dataset(x, y, z):
     fig = plt.figure()
@@ -17,7 +18,7 @@ def visualize_dataset(x, y, z):
     plt.show()
 
 
-def validation_cvxproblem(model, testloader, u_vectors, beta, rho, device, print=False):
+def validation_cvxproblem(model, testloader, beta, device, print=False):
     test_loss = 0
     test_correct = 0
     test_noncvx_cost = 0
@@ -26,12 +27,10 @@ def validation_cvxproblem(model, testloader, u_vectors, beta, rho, device, print
         for ix, (_x, _y) in enumerate(testloader):
             _x = Variable(_x).to(device)
             _y = Variable(_y).to(device)
-            _x = _x.view(_x.shape[0], -1)
-            _z = (torch.matmul(_x, torch.from_numpy(u_vectors).float().to(device)) >= 0)
 
-            yhat = model(_x, _z).float()
+            yhat = model(_x).float()
 
-            loss = loss_func_cvxproblem(yhat, _y, model, _x, _z, beta, rho, device)
+            loss = loss_func_cvxproblem(yhat, _y, model, _x, beta, device)
 
             test_loss += loss.item()
 
@@ -44,112 +43,62 @@ def validation_cvxproblem(model, testloader, u_vectors, beta, rho, device, print
     return test_loss
 
 
-def sgd_solver_cvxproblem(ds, ds_test, num_epochs, num_neurons, beta,
-                          learning_rate, batch_size, rho, u_vectors,
-                          solver_type, LBFGS_param, verbose=False, other_models=[],
-                          n=60000, d=28 * 28, num_classes=28 * 28, device='cpu'):
+def train_one_epoch(model, optimizer, dataloader, beta, device):
+    model.train()
+    losses = 0
+    for index, (x, y) in enumerate(dataloader):
+        x = Variable(x).to(device)
+        y = Variable(y).to(device)
+
+        optimizer.zero_grad()
+        yhat = model(x)
+
+        loss = loss_func_cvxproblem(yhat, y, model, x, beta)
+        loss.backward()
+
+        optimizer.step()
+
+        losses += loss.item()
+    return losses
+
+def train(model, train_dataloader, test_dataloader, epochs, learning_rate, beta, device='cpu'):
     device = torch.device(device)
 
-    # create the model
-    model = ConvexReLU(d, num_neurons, num_classes).to(device)
-
-    if solver_type == "sgd":
-        optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
-    elif solver_type == "adam":
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)  # ,
-    elif solver_type == "adagrad":
-        optimizer = torch.optim.Adagrad(model.parameters(), lr=learning_rate)  # ,
-    elif solver_type == "adadelta":
-        optimizer = torch.optim.Adadelta(model.parameters(), lr=learning_rate)  # ,
-    elif solver_type == "LBFGS":
-        optimizer = torch.optim.LBFGS(model.parameters(), history_size=LBFGS_param[0], max_iter=LBFGS_param[1])  # ,
-
-    # arrays for saving the loss and accuracy
-    losses = np.zeros((int(num_epochs * np.ceil(n / batch_size))))
-    accs = np.zeros(losses.shape)
-    noncvx_losses = np.zeros(losses.shape)
-
-    losses_test = np.zeros((num_epochs + 1))
-    accs_test = np.zeros((num_epochs + 1))
-    noncvx_losses_test = np.zeros((num_epochs + 1))
-
-    times = np.zeros((losses.shape[0] + 1))
-    times[0] = time.time()
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,
-                                                           verbose=verbose,
-                                                           factor=0.5,
-                                                           eps=1e-12)
-
-    model.eval()
-    losses_test[0] = validation_cvxproblem(model, ds_test, u_vectors, beta, rho,device, True)  # loss on the entire test set
-
-    iter_no = 0
-    print('starting training')
-    for i in range(num_epochs):
+    optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, verbose=True, factor=0.5, eps=1e-12)
+    for epoch in range(epochs):
         model.train()
-        for ix, (_x, _y, _z) in enumerate(ds):
-            # =========make input differentiable=======================
+        loss = train_one_epoch(model, optimizer, train_dataloader, beta, device)
 
-            _x = Variable(_x).to(device)
-            _y = Variable(_y).to(device)
-            _z = Variable(_z).to(device)
+if __name__ == "__main__":
+    D = np.ones((18, 8)) * 2
+    X = np.random.rand(1000, 8, 2)
+    u = np.random.rand(18, 2, 7)
 
-            for m in other_models:
-                _x = m(_x, _z).float()
+    print(np.einsum("mn, ink->imnk", D, X).shape)
+    N = []
+    for i in range(X.shape[0]):
+        M = []
+        for m in range(D.shape[0]):
+            temp = D[m, :].reshape(-1, 1) * X[i, :, :]
+            M.append(temp)
+        N.append(M)
+    print(np.sum(np.asarray(N) == np.einsum("mn, ink->imnk", D, X)) / (1000 * 18 * 8 * 2))
 
-            # ========forward pass=====================================
-            yhat = model(_x, _z).float()
+    intermidiate = np.einsum("mn, ink->imnk", D, X)
+    print(np.einsum("ijkl, jlm->im", intermidiate, u).shape)
 
-            loss = loss_func_cvxproblem(yhat, _y, model, _x, _z, beta, rho, device) / len(_y)
-            # =======backward pass=====================================
-            optimizer.zero_grad()  # zero the gradients on each pass before the update
-            loss.backward()  # backpropagate the loss through the model
-            optimizer.step()  # update the gradients w.r.t the loss
+    N = []
+    for i in range(intermidiate.shape[0]):
+        pass
 
-            losses[iter_no] += loss.item()  # loss on the minibatch
-
-        iter_no += 1
-        times[iter_no] = time.time()
-
-        model.eval()
-        # get test loss and accuracy
-        losses_test[i + 1] = validation_cvxproblem(model, ds_test,
-                                                                                                u_vectors, beta, rho,
-                                                                                                device)  # loss on the entire test set
-
-        if i % 1 == 0:
-            print(
-                "Epoch [{}/{}], TRAIN: noncvx/cvx loss: {}, {} acc: {}. TEST: noncvx/cvx loss: {}, {} acc: {}".format(i,
-                                                                                                                      num_epochs,
-                                                                                                                      np.round(
-                                                                                                                          noncvx_losses[
-                                                                                                                              iter_no - 1],
-                                                                                                                          3),
-                                                                                                                      np.round(
-                                                                                                                          losses[
-                                                                                                                              iter_no - 1],
-                                                                                                                          3),
-                                                                                                                      np.round(
-                                                                                                                          accs[
-                                                                                                                              iter_no - 1],
-                                                                                                                          3),
-                                                                                                                      np.round(
-                                                                                                                          noncvx_losses_test[
-                                                                                                                              i + 1],
-                                                                                                                          3) / 10000,
-                                                                                                                      np.round(
-                                                                                                                          losses_test[
-                                                                                                                              i + 1],
-                                                                                                                          3) / 10000,
-                                                                                                                      np.round(
-                                                                                                                          accs_test[
-                                                                                                                              i + 1] / 10000,
-                                                                                                                          3)))
-
-        scheduler.step(losses[iter_no - 1])
-
-    for param in model.parameters():
-        param.requires_grad = False
-
-    validation_cvxproblem(model, ds_test, u_vectors, beta, rho, device, True)
-    return model
+    # values = []
+    # for i in range(X.shape[0]):
+    #     x1 = X[i, ...]
+    #     temp = 0
+    #     for j in range(u.shape[0]):
+    #         u1 = u[j, ...]
+    #         temp += np.sum(x1 @ u1, axis=0)
+    #     values.append(temp)
+    #
+    # print(np.sum(np.einsum("ijk, lkm ->im", X, u) - np.asarray(values)))

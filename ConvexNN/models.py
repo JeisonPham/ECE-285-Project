@@ -91,14 +91,11 @@ class ConvexReLU(nn.Module):
         self.d, self.p = G.shape
         self.c = c
 
-        self.v = nn.Parameter(data=torch.zeros(c, p, d), requires_grad=True)
-        self.w = nn.Parameter(data=torch.zeros(c, p, d), requires_grad=True)
+        self.v = nn.Parameter(data=torch.zeros(d, p, c), requires_grad=True)
+        self.w = nn.Parameter(data=torch.zeros(d, p, c), requires_grad=True)
 
     def __call__(self, x, D=None):
-        if D is None:
-            D = torch.ge(x @ self.G, 0).float()
-        else:
-            D = torch.from_numpy(D).float()
+
 
         p_dff = self.v - self.w
         return torch.einsum("ij, lkj, ik->il", x, p_dff, D)
