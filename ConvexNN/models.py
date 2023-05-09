@@ -95,8 +95,9 @@ class ConvexReLU(nn.Module):
         self.w = nn.Parameter(data=torch.zeros(num_neurons, input_dim, output_dim), requires_grad=True)
         self.G = nn.Parameter(data=self.G, requires_grad=False)
 
+
     def __call__(self, x):
-        temp_x = torch.einsum("mn, ink->imnk", self.G, x)
+        temp_x = (torch.einsum("mn, ink->imnk", self.G, x))
         p_diff = self.v - self.w
         return torch.einsum("ijkl, jlm->im", temp_x, p_diff)
 
