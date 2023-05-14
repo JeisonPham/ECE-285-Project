@@ -4,6 +4,7 @@ import pickle
 from datetime import datetime
 import matplotlib
 import matplotlib.pyplot as plt
+from ConvexNN.utils import sample_gate_vectors
 
 matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
@@ -152,8 +153,8 @@ def generate_sign_patterns(A, P, verbose=False):
 
 
 def one_hot(labels, num_classes=10):
-    y = torch.eye(num_classes)
-    return y[labels.long()]
+    y = torch.nn.functional.one_hot(labels, num_classes)
+    return y
 
 
 # =====================================STANDARD NON-CONVEX NETWORK=====================================
@@ -183,10 +184,10 @@ def validation_primal(model, testloader, beta, device):
         output = model.forward(_x)
         yhat = model(_x).float()
 
-        loss = loss_func_primal(yhat, one_hot(_y).to(device), model, beta)
+        loss = loss_func_primal(yhat, _y, model, beta)
 
         test_loss += loss.item()
-        test_correct += torch.eq(torch.argmax(yhat, dim=1), torch.squeeze(_y)).float().sum()
+        # test_correct += torch.eq(torch.argmax(yhat, dim=1), torch.squeeze(_y)).float().sum()
 
     return test_loss, test_correct
 
@@ -242,19 +243,19 @@ def sgd_solver_pytorch_v2(ds, ds_test, num_epochs, num_neurons, beta,
             # ========forward pass=====================================
             yhat = model(_x).float()
 
-            loss = loss_func_primal(yhat, one_hot(_y).to(device), model, beta) / len(_y)
-            correct = torch.eq(torch.argmax(yhat, dim=1), torch.squeeze(_y)).float().sum() / len(_y)
+            loss = loss_func_primal(yhat, _y, model, beta) / len(_y)
+            # correct = torch.eq(torch.argmax(yhat, dim=1), torch.squeeze(_y)).float().sum() / len(_y)
 
             optimizer.zero_grad()  # zero the gradients on each pass before the update
             loss.backward()  # backpropagate the loss through the model
             optimizer.step()  # update the gradients w.r.t the loss
 
-            losses[iter_no] = loss.item()  # loss on the minibatch
-            accs[iter_no] = correct
+            losses[iter_no] += loss.item()  # loss on the minibatch
+            # accs[iter_no] = correct
 
-            iter_no += 1
-            times[iter_no] = time.time()
 
+            times[iter_no] += time.time()
+        iter_no += 1
         # get test loss and accuracy
         losses_test[i + 1], accs_test[i + 1] = validation_primal(model, ds_test, beta,
                                                                  device)  # loss on the entire test set
@@ -286,8 +287,11 @@ class custom_cvx_layer(torch.nn.Module):
         # P x d x C
         self.v = torch.nn.Parameter(data=torch.zeros(num_neurons, d, num_classes), requires_grad=True)
         self.w = torch.nn.Parameter(data=torch.zeros(num_neurons, d, num_classes), requires_grad=True)
+        self.G = torch.nn.Parameter(data=torch.from_numpy(sample_gate_vectors(42, d, num_neurons).astype(np.float32)), requires_grad=False)
 
     def forward(self, x, sign_patterns):
+        # sign_patterns = torch.from_numpy(sample_gate_vectors(42, x.shape[0], num_neurons)).to(x.get_device())
+        sign_patterns = (x @ self.G >= 0)
         sign_patterns = sign_patterns.unsqueeze(2)
         x = x.view(x.shape[0], -1)  # n x d
 
@@ -348,7 +352,6 @@ def validation_cvxproblem(model, testloader, u_vectors, beta, rho, device):
 
     with torch.no_grad():
         for ix, (_x, _y) in enumerate(testloader):
-            _x = torch.randn((5000, 9)).float()
             _x = Variable(_x).to(device)
             _y = Variable(_y).to(device)
             _x = _x.view(_x.shape[0], -1)
@@ -416,7 +419,6 @@ def sgd_solver_cvxproblem(ds, ds_test, num_epochs, num_neurons, beta,
         model.train()
         for ix, (_x, _y, _z) in enumerate(ds):
             # =========make input differentiable=======================
-            _x = torch.rand((3000, 9)).float()
             _x = Variable(_x).to(device)
             _y = Variable(_y).to(device)
             _z = Variable(_z).to(device)
@@ -432,11 +434,16 @@ def sgd_solver_cvxproblem(ds, ds_test, num_epochs, num_neurons, beta,
             loss.backward()  # backpropagate the loss through the model
             optimizer.step()  # update the gradients w.r.t the loss
 
-            losses[iter_no] = loss.item()
+            losses[iter_no] += loss.item()
 
-            iter_no += 1
-            times[iter_no] = time.time()
 
+            times[iter_no] += time.time()
+
+        x = _x[0].detach().cpu().numpy().reshape(28, 28)
+        y = _y[0].detach().cpu().numpy().reshape(28, 28)
+        z = yhat[0].detach().cpu().numpy().reshape(28, 28)
+        visualize_dataset(x, y, z)
+        iter_no += 1
         model.eval()
         # get test loss and accuracy
         losses_test[i + 1], accs_test[i + 1], noncvx_losses_test[i + 1] = validation_cvxproblem(model, ds_test,
@@ -509,7 +516,7 @@ print('Extracting the data')
 dummy_loader = torch.utils.data.DataLoader(
     train_dataset, batch_size=25, shuffle=False,
     pin_memory=True, sampler=None)
-for A, y in dummy_loader:
+for A, y,  in dummy_loader:
     pass
 Apatch = A.detach().clone()
 
@@ -517,11 +524,11 @@ A = A.view(A.shape[0], -1)
 n, d = A.size()
 
 # problem parameters
-P, verbose = 4000, True  # SET verbose to True to see progress
+P, verbose = 500, True  # SET verbose to True to see progress
 GD_only = ARGS.GD[0]
 CVX_only = ARGS.CVX[0]
 beta = 1e-3  # regularization parameter
-num_epochs1, batch_size = ARGS.n_epochs[0], 25  #
+num_epochs1, batch_size = ARGS.n_epochs[0], 1000  #
 num_neurons = P  # number of neurons is equal to number of hyperplane arrangements
 
 # create dataloaders
@@ -538,7 +545,7 @@ if CVX_only == 0:
     solver_type = "sgd"  # pick: "sgd", "adam", "adagrad", "adadelta", "LBFGS"
     schedule = 0  # learning rate schedule (0: Nothing, 1: ReduceLROnPlateau, 2: ExponentialLR)
     LBFGS_param = [10, 4]  # these parameters are for the LBFGS solver
-    learning_rate = 1e-2
+    learning_rate = 1e-5
 
     ## SGD1 constant
     print('SGD1-training-mu={}'.format(learning_rate))
@@ -581,24 +588,24 @@ if GD_only == 0:
     ds_train = DataLoader(ds_train, batch_size=batch_size, shuffle=True)
 
     test_loader = torch.utils.data.DataLoader(
-        test_dataset, batch_size=25, shuffle=False,
+        test_dataset, batch_size=batch_size, shuffle=False,
         pin_memory=True)
 
     # #  Convex1
-    # learning_rate = 1e-6  # 1e-6 for sgd
-    # print('Convex Random1-mu={}'.format(learning_rate))
-    # results_cvx1 = sgd_solver_cvxproblem(ds_train, test_loader, num_epochs2, num_neurons, beta,
-    #                                      learning_rate, batch_size, rho, u_vectors, solver_type, LBFGS_param,
-    #                                      verbose=True,
-    #                                      n=n, device='cuda')
-    #
-    # #  Convex2
-    # learning_rate = 5e-7  # 1e-6 for sgd
-    # print('Convex Random2-mu={}'.format(learning_rate))
-    # results_cvx2 = sgd_solver_cvxproblem(ds_train, test_loader, num_epochs2, num_neurons, beta,
-    #                                      learning_rate, batch_size, rho, u_vectors, solver_type, LBFGS_param,
-    #                                      verbose=True,
-    #                                      n=n, device='cuda')
+    learning_rate = 1e-6  # 1e-6 for sgd
+    print('Convex Random1-mu={}'.format(learning_rate))
+    results_cvx1 = sgd_solver_cvxproblem(ds_train, test_loader, num_epochs2, num_neurons, beta,
+                                         learning_rate, batch_size, rho, u_vectors, solver_type, LBFGS_param,
+                                         verbose=True,
+                                         n=n, device='cuda')
+
+    #  Convex2
+    learning_rate = 5e-7  # 1e-6 for sgd
+    print('Convex Random2-mu={}'.format(learning_rate))
+    results_cvx2 = sgd_solver_cvxproblem(ds_train, test_loader, num_epochs2, num_neurons, beta,
+                                         learning_rate, batch_size, rho, u_vectors, solver_type, LBFGS_param,
+                                         verbose=True,
+                                         n=n, device='cuda')
 
     #  Convex with convolutional patterns
     print('Generating conv sign patterns')
