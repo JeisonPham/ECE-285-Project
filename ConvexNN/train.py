@@ -4,8 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 from ConvexNN.utils import *
-from ConvexNN.models import ConvexReLU
-from torch import autograd
 
 
 def visualize_dataset(x, y, z):
@@ -25,7 +23,7 @@ def validation_cvxproblem(model, testloader, beta, device, print=False):
     test_noncvx_cost = 0
 
     with torch.no_grad():
-        for ix, (_x, _y) in enumerate(testloader):
+        for ix, (_x, _y, _) in enumerate(testloader):
             _x = Variable(_x).to(device)
             _y = Variable(_y).to(device)
 
@@ -36,8 +34,8 @@ def validation_cvxproblem(model, testloader, beta, device, print=False):
             test_loss += loss.item()
 
     if print:
-        # x = _x[0].detach().cpu().numpy().reshape(28, 28)
-        x = np.zeros((28, 28))
+        x = _x[0].detach().cpu().numpy().reshape(28, 28)
+        # x = np.zeros((28, 28))
         y = _y[0].detach().cpu().numpy().reshape(28, 28)
         z = yhat[0].detach().cpu().numpy().reshape(28, 28)
         visualize_dataset(x, y, z)
@@ -49,7 +47,7 @@ def train_one_epoch(model, optimizer, dataloader, beta, device):
     model.train()
     losses = 0
 
-    for index, (x, y) in enumerate(dataloader):
+    for index, (x, y, _) in enumerate(dataloader):
         x = Variable(x).to(device)
         y = Variable(y).to(device)
 
@@ -59,17 +57,18 @@ def train_one_epoch(model, optimizer, dataloader, beta, device):
         loss = loss_func_cvxproblem(yhat, y, model, x, beta)
         loss.backward()
 
-        torch.nn.utils.clip_grad_norm(model.parameters(), 5)
+        torch.nn.utils.clip_grad_norm(model.parameters(), 10)
         optimizer.step()
 
         losses += loss.item()
     return losses / (index + 1)
 
+
 def train(model, train_dataloader, test_dataloader, epochs, learning_rate, beta, device='cpu'):
     device = torch.device(device)
 
     optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
-    # optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(0.5, 0.99))
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, verbose=True, factor=0.5, eps=1e-12)
     for epoch in range(epochs):
         model.train()
@@ -83,10 +82,15 @@ def train(model, train_dataloader, test_dataloader, epochs, learning_rate, beta,
 
     loss = validation_cvxproblem(model, test_dataloader, beta, device, print=True)
     print(loss)
+    for param in model.parameters():
+        param.requires_grad = False
+    return model
+
+
 if __name__ == "__main__":
-    D = np.ones((18, 8)) * 2 # (num_neurons, input_dim)
-    X = np.random.rand(1000, 8, 2) #(num_samples, input_dim, num_features)
-    u = np.random.rand(18, 2, 7) #(num_neurons, num_features, output_dim)
+    D = np.ones((18, 8)) * 2  # (num_neurons, input_dim)
+    X = np.random.rand(1000, 8, 2)  # (num_samples, input_dim, num_features)
+    u = np.random.rand(18, 2, 7)  # (num_neurons, num_features, output_dim)
 
     print(np.einsum("mn, ink->imnk", D, X).shape)
     N = []
